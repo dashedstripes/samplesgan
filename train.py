@@ -48,7 +48,6 @@ class SlidingWindowDataset(Dataset):
         return sequence_tensor, target_tensor
 
 
-# Example usage
 directory = "training_data/processed"
 dataset = SlidingWindowDataset(directory, sequence_length=100, step_length=1)
 data_loader = DataLoader(dataset, batch_size=1, shuffle=False) # setting to false to make it easier to visualize the data
