@@ -68,7 +68,7 @@ def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
     num_samples = sample_rate * duration
 
     # Initialize the seed with zeros (or you could use random noise)
-    current_input = torch.rand(1, 1, 99).to(device) * 2 - 1
+    current_input = torch.rand(1, 1, 99).to(device)
 
     generated_audio = []
 
@@ -76,17 +76,6 @@ def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
         for _ in range(num_samples):
             # Forward pass through the model
             output = model(current_input)
-
-            # Get the last output sample (output is a single tensor (x))
-            new_sample = output.item()
-            print(current_input, new_sample)
-
-            # Append the generated sample to the output list
-            generated_audio.append(new_sample)
-
-
-            # Update the current input (slide window and insert the new sample)
-            current_input = torch.roll(current_input, shifts=-1, dims=2)
 
     # Convert the list of samples to a single numpy array and reshape it
     generated_audio = np.concatenate(generated_audio).reshape(-1)
@@ -107,8 +96,6 @@ state_dict = torch.load(model_weights_path, map_location=torch.device('cpu'))
 model.load_state_dict(state_dict)
 
 generated_audio = generate_audio(model, sample_rate=16000, duration=1, device='cpu')
-
-print(generated_audio)
 
 # sample_rate = 16000  # Replace with your actual sample rate
 # file_path = "generated/generated_audio.wav"  # Replace with your desired file path

@@ -5,8 +5,8 @@ from scipy import signal
 from matplotlib import pyplot as plt
 
 def process_raw_data():
-    raw_dir = "training_data/test_raw"
-    processed_dir = "training_data/test_processed"
+    raw_dir = "training_data/raw"
+    processed_dir = "training_data/processed"
     os.makedirs(processed_dir, exist_ok=True)  # Ensure processed directory exists
     files = [
         os.path.join(raw_dir, f)
@@ -15,7 +15,7 @@ def process_raw_data():
     ]
 
     chunk_index = 0
-
+ 
     for i, f in enumerate(files):
         try:
             rate, data = wavfile.read(f)
@@ -25,10 +25,7 @@ def process_raw_data():
                 # Averages the channels if there are more than one
                 data = np.mean(data, axis=1)
 
-            # Truncate or pad the data to make it 1 second long
             data = data[:rate]  # truncate to 1 second
-            if len(data) < rate:
-                data = np.pad(data, (0, rate - len(data)), "constant")
 
             # Resample to 16kHz if the original rate is different
             if rate != 16000:
@@ -42,13 +39,9 @@ def process_raw_data():
             # make values between -1 and 1
             data = data / 32768.0
 
-            # clip the audio to remove silence
-            threshold = 0.0001
-            data = data[~(np.abs(data) < threshold)]
-
-            # chunk the audio into 100 samples, with custom overlap
-            chunk_size = 100
-            overlap = 20
+            # chunk the audio into 10 samples, with custom overlap
+            chunk_size = 10
+            overlap = 2
             for i in range(0, len(data) - chunk_size, chunk_size - overlap):
                 chunk = data[i : i + chunk_size]
                 wavfile.write(
@@ -65,5 +58,5 @@ def visualize_data():
     plt.plot(data)
     plt.show()
 
-# process_raw_data()
-visualize_data()
+process_raw_data()
+# visualize_data()

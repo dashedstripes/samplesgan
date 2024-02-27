@@ -17,8 +17,8 @@ class SlidingWindowDataset(Dataset):
     def __getitem__(self, idx):
         _, data = wavfile.read(f"{self.directory}/chunk_{idx}.wav")
 
-        sequence = data[0:99]
-        target = data[99]
+        sequence = data[0:9]
+        target = data[9]
 
         sequence = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
         target = torch.tensor(target, dtype=torch.float32)
@@ -73,7 +73,7 @@ class WaveNetModel(nn.Module):
 
 directory = "training_data/processed"
 dataset = SlidingWindowDataset(directory)
-dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
 model = WaveNetModel()
 criterion = nn.MSELoss()
@@ -82,24 +82,23 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-num_epochs = 1
+num_epochs = 10
 for epoch in range(num_epochs):
     for i, (sequences, targets) in enumerate(dataloader):
         sequences, targets = sequences.to(device), targets.to(device)
-        print(targets)
-        # optimizer.zero_grad()
-        # outputs = model(sequences)
-        # print(outputs)
+        optimizer.zero_grad()
+        outputs = model(sequences)
+        if(outputs.size() != targets.size()):
+            continue
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
 
-        # loss = criterion(outputs, targets)
-        # loss.backward()
-        # optimizer.step()
+        if (i + 1) % 100 == 0:
+            print(
+                f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}"
+            )
 
-        # if (i + 1) % 100 == 0:
-        #     print(
-        #         f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}"
-        #     )
-
-# print("Finished Training")
-# # save the weights
-# torch.save(model.state_dict(), "wavenet_model.pth")
+print("Finished Training")
+# save the weights
+torch.save(model.state_dict(), "wavenet_model.pth")
