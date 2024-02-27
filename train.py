@@ -6,6 +6,7 @@ from scipy.io import wavfile
 import matplotlib.pyplot as plt
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
 
 class SlidingWindowDataset(Dataset):
@@ -40,10 +41,11 @@ class SlidingWindowDataset(Dataset):
         end_pos = start_pos + self.sequence_length
 
         sequence = data[start_pos:end_pos] / 32768.0
-        target_sample = (data[end_pos] if end_pos < len(data) else 0) / 32768.0
+        target_sample = (data[end_pos] if end_pos < len(data) else 0)
+        target_sample = target_sample / 32768.0
 
         sequence_tensor = torch.from_numpy(sequence).float().unsqueeze(0)
-        target_tensor = torch.tensor(target_sample, dtype=torch.float).unsqueeze(0).unsqueeze(0)
+        target_tensor = torch.tensor(target_sample, dtype=torch.float)
 
         return sequence_tensor, target_tensor
 
@@ -82,9 +84,9 @@ class WaveNetModel(nn.Module):
         for b in range(self.num_blocks):
             for n in range(self.num_layers):
                 residual = x
-                x = torch.tanh(
-                    self.dilated_convs[b * self.num_layers + n](x)
-                ) * torch.sigmoid(self.dilated_convs[b * self.num_layers + n](x))
+                filtered = torch.tanh(self.dilated_convs[b * self.num_layers + n](x))
+                gated = torch.sigmoid(self.dilated_convs[b * self.num_layers + n](x))
+                x = filtered * gated  # Correct gate mechanism
                 x = self.residual_convs[b * self.num_layers + n](x)
 
                 # Ensure that residual and x are of the same shape
@@ -104,6 +106,8 @@ class WaveNetModel(nn.Module):
         x = torch.relu(self.end_conv1(x))
         x = self.end_conv2(x)
 
+        x = torch.mean(x, dim=2, keepdim=True)
+
         return x
 
 
@@ -119,13 +123,16 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-# Training loop
-num_epochs = 10
+num_epochs = 1
 for epoch in range(num_epochs):
     for i, (sequences, targets) in enumerate(dataloader):
         sequences, targets = sequences.to(device), targets.to(device)
+
         optimizer.zero_grad()
         outputs = model(sequences)
+
+        outputs = outputs.squeeze(1).squeeze(1)
+
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()

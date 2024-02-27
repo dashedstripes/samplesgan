@@ -1,3 +1,5 @@
 .venv/
 .DS_Store
-training_data
+training_data/
+generated/
+wavenet_model.pth
