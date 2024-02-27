@@ -4,6 +4,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from scipy.io import wavfile
 import matplotlib.pyplot as plt
+import torch.nn as nn
+import torch.optim as optim
 
 
 class SlidingWindowDataset(Dataset):
@@ -38,42 +40,99 @@ class SlidingWindowDataset(Dataset):
         end_pos = start_pos + self.sequence_length
 
         sequence = data[start_pos:end_pos] / 32768.0
-        target_sample = (
-            data[end_pos] if end_pos < len(data) else 0
-        ) / 32768.0
+        target_sample = (data[end_pos] if end_pos < len(data) else 0) / 32768.0
 
-        sequence_tensor = torch.from_numpy(sequence).float()
-        target_tensor = torch.tensor(target_sample, dtype=torch.float)
+        sequence_tensor = torch.from_numpy(sequence).float().unsqueeze(0)
+        target_tensor = torch.tensor(target_sample, dtype=torch.float).unsqueeze(0).unsqueeze(0)
 
         return sequence_tensor, target_tensor
 
 
+class WaveNetModel(nn.Module):
+    def __init__(self, num_channels, num_blocks, num_layers, kernel_size=2):
+        super(WaveNetModel, self).__init__()
+        # Initialize layers
+        self.num_blocks = num_blocks
+        self.num_layers = num_layers
+
+        self.dilated_convs = nn.ModuleList([])
+        self.residual_convs = nn.ModuleList([])
+        self.skip_convs = nn.ModuleList([])
+        self.start_conv = nn.Conv1d(1, num_channels, 1)
+
+        # Building the WaveNet layers
+        for b in range(num_blocks):
+            for n in range(num_layers):
+                dilation = 2**n
+                self.dilated_convs.append(
+                    nn.Conv1d(
+                        num_channels, num_channels, kernel_size, dilation=dilation
+                    )
+                )
+                self.residual_convs.append(nn.Conv1d(num_channels, num_channels, 1))
+                self.skip_convs.append(nn.Conv1d(num_channels, num_channels, 1))
+
+        self.end_conv1 = nn.Conv1d(num_channels, num_channels, 1)
+        self.end_conv2 = nn.Conv1d(num_channels, 1, 1)
+
+    def forward(self, x):
+        x = self.start_conv(x)
+        skip_connections = []
+
+        for b in range(self.num_blocks):
+            for n in range(self.num_layers):
+                residual = x
+                x = torch.tanh(
+                    self.dilated_convs[b * self.num_layers + n](x)
+                ) * torch.sigmoid(self.dilated_convs[b * self.num_layers + n](x))
+                x = self.residual_convs[b * self.num_layers + n](x)
+
+                # Ensure that residual and x are of the same shape
+                if x.size(2) < residual.size(2):
+                    residual = residual[:, :, :x.size(2)]
+                elif x.size(2) > residual.size(2):
+                    # Option to pad if x is longer, though unlikely in this context
+                    padding = x.size(2) - residual.size(2)
+                    residual = F.pad(residual, (0, padding))
+
+                x = x + residual  # Element-wise addition
+
+                skip = self.skip_convs[b * self.num_layers + n](x)
+                skip_connections.append(skip)
+
+        x = torch.sum(torch.stack(skip_connections), 0)
+        x = torch.relu(self.end_conv1(x))
+        x = self.end_conv2(x)
+
+        return x
+
+
 directory = "training_data/processed"
 dataset = SlidingWindowDataset(directory, sequence_length=100, step_length=1)
-data_loader = DataLoader(dataset, batch_size=1, shuffle=False) # setting to false to make it easier to visualize the data
+dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
-def visualize_sample():
-    # Squeeze the batch dimension since batch_size=1 for plotting
-    input_sequence_np = input_sequence.squeeze().numpy()  # Adjusted line
+# Initialize the model, loss function, and optimizer
+model = WaveNetModel(num_channels=1, num_blocks=1, num_layers=1)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-    plt.figure(figsize=(10, 4))
-    plt.plot(input_sequence_np, label="Input Sequence")
-    # Correctly adjust the index for the target sample and convert it to a numpy scalar
-    plt.scatter(
-        len(input_sequence_np) - 1,
-        target_sample.numpy().squeeze(),
-        color="red",
-        label="Target Sample",
-    )  # Adjusted line
-    plt.xlabel("Sample Index")
-    plt.ylabel("Amplitude")
-    plt.title("Normalized Audio Sequence with Target Sample")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
-for input_sequence, target_sample in data_loader:
-    print(input_sequence.shape, target_sample.shape)
-    print(input_sequence, target_sample)
-    visualize_sample()
-    break
+# Training loop
+num_epochs = 10
+for epoch in range(num_epochs):
+    for i, (sequences, targets) in enumerate(dataloader):
+        sequences, targets = sequences.to(device), targets.to(device)
+        optimizer.zero_grad()
+        outputs = model(sequences)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+
+        if (i + 1) % 100 == 0:
+            print(f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}")
+
+print("Finished Training")
+# save the weights
+torch.save(model.state_dict(), "wavenet_model.pth")
