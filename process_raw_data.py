@@ -42,6 +42,10 @@ def process_raw_data():
             # make values between -1 and 1
             data = data / 32768.0
 
+            # clip the audio to remove silence
+            threshold = 0.0001
+            data = data[~(np.abs(data) < threshold)]
+
             # chunk the audio into 100 samples, with custom overlap
             chunk_size = 100
             overlap = 20
@@ -57,9 +61,9 @@ def process_raw_data():
 
 
 def visualize_data():
-    rate, data = wavfile.read("training_data/test_processed/chunk_318.wav")
+    rate, data = wavfile.read("training_data/test_processed/chunk_165.wav")
     plt.plot(data)
     plt.show()
 
-process_raw_data()
-# visualize_data()
+# process_raw_data()
+visualize_data()

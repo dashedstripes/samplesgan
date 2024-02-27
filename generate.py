@@ -5,60 +5,46 @@ from scipy.io.wavfile import write
 
 
 class WaveNetModel(nn.Module):
-    def __init__(self, num_channels, num_blocks, num_layers, kernel_size=2):
+    def __init__(self, in_channels=1, out_channels=1, num_blocks=1, num_layers=10, kernel_size=1):
         super(WaveNetModel, self).__init__()
-        # Initialize layers
-        self.num_blocks = num_blocks
-        self.num_layers = num_layers
 
-        self.dilated_convs = nn.ModuleList([])
-        self.residual_convs = nn.ModuleList([])
-        self.skip_convs = nn.ModuleList([])
-        self.start_conv = nn.Conv1d(1, num_channels, 1)
+        self.dilated_convs = nn.ModuleList([
+            nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=2**layer)
+            for _ in range(num_blocks) for layer in range(num_layers)
+        ])
 
-        # Building the WaveNet layers
-        for b in range(num_blocks):
-            for n in range(num_layers):
-                dilation = 2**n
-                self.dilated_convs.append(
-                    nn.Conv1d(
-                        num_channels, num_channels, kernel_size, dilation=dilation
-                    )
-                )
-                self.residual_convs.append(nn.Conv1d(num_channels, num_channels, 1))
-                self.skip_convs.append(nn.Conv1d(num_channels, num_channels, 1))
+        self.residual_convs = nn.ModuleList([
+            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
+            for _ in range(num_blocks * num_layers)
+        ])
 
-        self.end_conv1 = nn.Conv1d(num_channels, num_channels, 1)
-        self.end_conv2 = nn.Conv1d(num_channels, 1, 1)
+        self.skip_convs = nn.ModuleList([
+            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
+            for _ in range(num_blocks * num_layers)
+        ])
+
+        self.final_conv = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
+            nn.AdaptiveAvgPool1d(1)
+        )
 
     def forward(self, x):
-        x = self.start_conv(x)
         skip_connections = []
 
-        for b in range(self.num_blocks):
-            for n in range(self.num_layers):
-                residual = x
-                x = torch.tanh(
-                    self.dilated_convs[b * self.num_layers + n](x)
-                ) * torch.sigmoid(self.dilated_convs[b * self.num_layers + n](x))
-                x = self.residual_convs[b * self.num_layers + n](x)
+        for dilated_conv, residual_conv, skip_conv in zip(self.dilated_convs, self.residual_convs, self.skip_convs):
+            out = dilated_conv(x)
+            skip = skip_conv(out)
+            skip_connections.append(skip)
 
-                # Ensure that residual and x are of the same shape
-                if x.size(2) < residual.size(2):
-                    residual = residual[:, :, :x.size(2)]
-                elif x.size(2) > residual.size(2):
-                    # Option to pad if x is longer, though unlikely in this context
-                    padding = x.size(2) - residual.size(2)
-                    residual = F.pad(residual, (0, padding))
+            out = residual_conv(out)
+            x = out + x
 
-                x = x + residual  # Element-wise addition
-
-                skip = self.skip_convs[b * self.num_layers + n](x)
-                skip_connections.append(skip)
-
-        x = torch.sum(torch.stack(skip_connections), 0)
-        x = torch.relu(self.end_conv1(x))
-        x = self.end_conv2(x)
+        x = torch.sum(torch.stack(skip_connections), dim=0)
+        x = self.final_conv(x)
+        x = x.squeeze()
 
         return x
 
@@ -82,7 +68,7 @@ def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
     num_samples = sample_rate * duration
 
     # Initialize the seed with zeros (or you could use random noise)
-    current_input = torch.rand(1, 1, 100).to(device) * 2 - 1
+    current_input = torch.rand(1, 1, 99).to(device) * 2 - 1
 
     generated_audio = []
 
@@ -91,14 +77,16 @@ def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
             # Forward pass through the model
             output = model(current_input)
 
-            # Get the last output sample
-            new_sample = output[:, :, -1].cpu().numpy()
+            # Get the last output sample (output is a single tensor (x))
+            new_sample = output.item()
+            print(current_input, new_sample)
 
             # Append the generated sample to the output list
             generated_audio.append(new_sample)
 
+
             # Update the current input (slide window and insert the new sample)
-            current_input = torch.cat((current_input[:, :, 1:], output[:, :, -1:]), dim=2)
+            current_input = torch.roll(current_input, shifts=-1, dims=2)
 
     # Convert the list of samples to a single numpy array and reshape it
     generated_audio = np.concatenate(generated_audio).reshape(-1)
@@ -113,7 +101,7 @@ def floats_to_wav(audio_data, sample_rate, file_path):
     # Write the data to a WAV file
     write(file_path, sample_rate, int_data)
 
-model = WaveNetModel(num_channels=1, num_blocks=1, num_layers=1)
+model = WaveNetModel()
 model_weights_path = "wavenet_model.pth"
 state_dict = torch.load(model_weights_path, map_location=torch.device('cpu'))
 model.load_state_dict(state_dict)
