@@ -18,10 +18,15 @@ class SlidingWindowDataset(Dataset):
             return len(files)
 
     def __getitem__(self, idx):
-        print(idx)
-        # rate, data = wavfile.read(f"{self.directory}/kick_{idx}.wav")
+        _, data = wavfile.read(f"{self.directory}/chunk_{idx}.wav")
 
-        return None
+        sequence = data[0:99]
+        target = data[99]
+
+        sequence = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
+        target = torch.tensor(target, dtype=torch.float32)
+
+        return sequence, target
 
 
 class WaveNetModel(nn.Module):
@@ -85,38 +90,40 @@ class WaveNetModel(nn.Module):
         return x
 
 
-directory = "training_data/processed"
+directory = "training_data/test_processed"
 dataset = SlidingWindowDataset(directory)
 dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
 
-batch = next(iter(dataloader))
-
 # # Initialize the model, loss function, and optimizer
-# model = WaveNetModel(num_channels=1, num_blocks=4, num_layers=4)
-# criterion = nn.MSELoss()
-# optimizer = optim.Adam(model.parameters(), lr=0.001)
+model = WaveNetModel(num_channels=1, num_blocks=4, num_layers=4)
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# model.to(device)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
-# num_epochs = 1
-# for epoch in range(num_epochs):
-#     for i, (sequences, targets) in enumerate(dataloader):
-#         sequences, targets = sequences.to(device), targets.to(device)
+num_epochs = 1
+for epoch in range(num_epochs):
+    for i, (sequences, targets) in enumerate(dataloader):
+        sequences, targets = sequences.to(device), targets.to(device)
 
-#         optimizer.zero_grad()
-#         outputs = model(sequences)
+        print(sequences[0], targets[0])
 
-#         outputs = outputs.squeeze(1).squeeze(1)
+        # optimizer.zero_grad()
+        # outputs = model(sequences)
 
-#         print(outputs)
+        # print(outputs.shape)
+
+        # outputs = outputs.squeeze(1).squeeze(1)
+
+        # print(outputs)
 
         # loss = criterion(outputs, targets)
         # loss.backward()
         # optimizer.step()
 
-#         if (i + 1) % 100 == 0:
-#             print(f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}")
+        # if (i + 1) % 100 == 0:
+        #     print(f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}")
 
 # print("Finished Training")
 # # save the weights

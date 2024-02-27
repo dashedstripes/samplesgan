@@ -39,6 +39,9 @@ def process_raw_data():
             data = np.int16(data / np.max(np.abs(data)) * 32767)
             data = np.clip(data, -32768, 32767)
 
+            # make values between -1 and 1
+            data = data / 32768.0
+
             # chunk the audio into 100 samples
             chunk_size = 100
             for j in range(0, len(data), chunk_size):
@@ -53,7 +56,7 @@ def process_raw_data():
 
 
 def visualize_data():
-    rate, data = wavfile.read("training_data/test_processed/chunk_0.wav")
+    rate, data = wavfile.read("training_data/test_processed/chunk_318.wav")
     plt.plot(data)
     plt.show()
 
