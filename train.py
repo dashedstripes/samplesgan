@@ -17,8 +17,8 @@ class SlidingWindowDataset(Dataset):
     def __getitem__(self, idx):
         _, data = wavfile.read(f"{self.directory}/chunk_{idx}.wav")
 
-        sequence = data[0:9]
-        target = data[9]
+        sequence = data[0:99]
+        target = data[99]
 
         sequence = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
         target = torch.tensor(target, dtype=torch.float32)
@@ -27,53 +27,16 @@ class SlidingWindowDataset(Dataset):
 
 
 class WaveNetModel(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, num_blocks=1, num_layers=10, kernel_size=1):
+    def __init__(self):
         super(WaveNetModel, self).__init__()
-
-        self.dilated_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=2**layer)
-            for _ in range(num_blocks) for layer in range(num_layers)
-        ])
-
-        self.residual_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
-            for _ in range(num_blocks * num_layers)
-        ])
-
-        self.skip_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
-            for _ in range(num_blocks * num_layers)
-        ])
-
-        self.final_conv = nn.Sequential(
-            nn.ReLU(),
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
-            nn.AdaptiveAvgPool1d(1)
-        )
-
     def forward(self, x):
-        skip_connections = []
-
-        for dilated_conv, residual_conv, skip_conv in zip(self.dilated_convs, self.residual_convs, self.skip_convs):
-            out = dilated_conv(x)
-            skip = skip_conv(out)
-            skip_connections.append(skip)
-
-            out = residual_conv(out)
-            x = out + x
-
-        x = torch.sum(torch.stack(skip_connections), dim=0)
-        x = self.final_conv(x)
-        x = x.squeeze()
-
+        
         return x
 
 
-directory = "training_data/processed"
+directory = "training_data/test_processed"
 dataset = SlidingWindowDataset(directory)
-dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
 
 model = WaveNetModel()
 criterion = nn.MSELoss()
@@ -88,8 +51,6 @@ for epoch in range(num_epochs):
         sequences, targets = sequences.to(device), targets.to(device)
         optimizer.zero_grad()
         outputs = model(sequences)
-        if(outputs.size() != targets.size()):
-            continue
         loss = criterion(outputs, targets)
         loss.backward()
         optimizer.step()
