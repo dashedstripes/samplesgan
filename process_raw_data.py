@@ -2,17 +2,19 @@ import os
 import numpy as np
 from scipy.io import wavfile
 from scipy import signal
-
+from matplotlib import pyplot as plt
 
 def process_raw_data():
-    raw_dir = "training_data/raw"
-    processed_dir = "training_data/processed"
+    raw_dir = "training_data/test_raw"
+    processed_dir = "training_data/test_processed"
     os.makedirs(processed_dir, exist_ok=True)  # Ensure processed directory exists
     files = [
         os.path.join(raw_dir, f)
         for f in os.listdir(raw_dir)
         if os.path.isfile(os.path.join(raw_dir, f)) and f.endswith(".wav")
     ]
+
+    chunk_index = 0
 
     for i, f in enumerate(files):
         try:
@@ -37,10 +39,23 @@ def process_raw_data():
             data = np.int16(data / np.max(np.abs(data)) * 32767)
             data = np.clip(data, -32768, 32767)
 
-            # Write to new file in processed directory
-            wavfile.write(os.path.join(processed_dir, f"kick_{i}.wav"), 16000, data)
+            # chunk the audio into 100 samples
+            chunk_size = 100
+            for j in range(0, len(data), chunk_size):
+                chunk = data[j : j + chunk_size]
+                if len(chunk) < chunk_size:
+                    break
+                wavfile.write(os.path.join(processed_dir, f"chunk_{chunk_index}.wav"), 16000, chunk)
+                chunk_index += 1
+
         except Exception as e:
             print(f"Error processing {f}: {e}")
 
 
-process_raw_data()
+def visualize_data():
+    rate, data = wavfile.read("training_data/test_processed/chunk_0.wav")
+    plt.plot(data)
+    plt.show()
+
+# process_raw_data()
+visualize_data()
