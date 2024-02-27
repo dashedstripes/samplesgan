@@ -63,7 +63,11 @@ class WaveNetModel(nn.Module):
         for b in range(self.num_blocks):
             for n in range(self.num_layers):
                 residual = x
+                print(residual.shape)
                 filtered = torch.tanh(self.dilated_convs[b * self.num_layers + n](x))
+                # print(filtered.shape)
+
+
                 gated = torch.sigmoid(self.dilated_convs[b * self.num_layers + n](x))
                 x = filtered * gated  # Correct gate mechanism
                 x = self.residual_convs[b * self.num_layers + n](x)
@@ -95,7 +99,7 @@ dataset = SlidingWindowDataset(directory)
 dataloader = DataLoader(dataset, batch_size=16, shuffle=False)
 
 # # Initialize the model, loss function, and optimizer
-model = WaveNetModel(num_channels=1, num_blocks=4, num_layers=4)
+model = WaveNetModel(num_channels=1, num_blocks=1, num_layers=1)
 criterion = nn.MSELoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -107,12 +111,8 @@ for epoch in range(num_epochs):
     for i, (sequences, targets) in enumerate(dataloader):
         sequences, targets = sequences.to(device), targets.to(device)
 
-        print(sequences[0], targets[0])
-
-        # optimizer.zero_grad()
-        # outputs = model(sequences)
-
-        # print(outputs.shape)
+        optimizer.zero_grad()
+        outputs = model(sequences)
 
         # outputs = outputs.squeeze(1).squeeze(1)
 

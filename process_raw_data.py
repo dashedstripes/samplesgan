@@ -42,13 +42,14 @@ def process_raw_data():
             # make values between -1 and 1
             data = data / 32768.0
 
-            # chunk the audio into 100 samples
+            # chunk the audio into 100 samples, with custom overlap
             chunk_size = 100
-            for j in range(0, len(data), chunk_size):
-                chunk = data[j : j + chunk_size]
-                if len(chunk) < chunk_size:
-                    break
-                wavfile.write(os.path.join(processed_dir, f"chunk_{chunk_index}.wav"), 16000, chunk)
+            overlap = 20
+            for i in range(0, len(data) - chunk_size, chunk_size - overlap):
+                chunk = data[i : i + chunk_size]
+                wavfile.write(
+                    f"{processed_dir}/chunk_{chunk_index}.wav", 16000, chunk
+                )
                 chunk_index += 1
 
         except Exception as e:
@@ -60,5 +61,5 @@ def visualize_data():
     plt.plot(data)
     plt.show()
 
-# process_raw_data()
-visualize_data()
+process_raw_data()
+# visualize_data()
