@@ -72,8 +72,11 @@ class Discriminator(nn.Module):
         return validity
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 generator = Generator()
 discriminator = Discriminator()
+generator.to(device)
+discriminator.to(device)
 
 # hyperparameters
 lr = 0.0002
@@ -89,6 +92,7 @@ optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=lr)
 
 dataset = AudioDataset('./training_data/processed')
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=True)
+
 
 for epoch in range(epochs):
     for i, real_samples in enumerate(train_loader):
