@@ -5,46 +5,24 @@ from scipy.io.wavfile import write
 
 
 class WaveNetModel(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, num_blocks=1, num_layers=10, kernel_size=1):
+    def __init__(self):
         super(WaveNetModel, self).__init__()
-
-        self.dilated_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, dilation=2**layer)
-            for _ in range(num_blocks) for layer in range(num_layers)
-        ])
-
-        self.residual_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
-            for _ in range(num_blocks * num_layers)
-        ])
-
-        self.skip_convs = nn.ModuleList([
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
-            for _ in range(num_blocks * num_layers)
-        ])
-
-        self.final_conv = nn.Sequential(
-            nn.ReLU(),
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=1),
-            nn.AdaptiveAvgPool1d(1)
-        )
+        self.conv1 = nn.Conv1d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1)
+        self.relu = nn.ReLU()
+        self.lstm = nn.LSTM(input_size=64, hidden_size=50, batch_first=True)
+        self.dense1 = nn.Linear(50, 50)
+        self.dense2 = nn.Linear(50, 1)
 
     def forward(self, x):
-        skip_connections = []
+        x = self.conv1(x)
+        x = self.relu(x)
 
-        for dilated_conv, residual_conv, skip_conv in zip(self.dilated_convs, self.residual_convs, self.skip_convs):
-            out = dilated_conv(x)
-            skip = skip_conv(out)
-            skip_connections.append(skip)
+        x = x.permute(0, 2, 1)
+        x, (hn, cn) = self.lstm(x)
+        x = x[:, -1, :]
 
-            out = residual_conv(out)
-            x = out + x
-
-        x = torch.sum(torch.stack(skip_connections), dim=0)
-        x = self.final_conv(x)
-        x = x.squeeze()
+        x = self.relu(self.dense1(x))
+        x = self.dense2(x)
 
         return x
 
@@ -76,9 +54,19 @@ def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
         for _ in range(num_samples):
             # Forward pass through the model
             output = model(current_input)
+            next_input = output.squeeze()
+            # reshape next_input to match the input dimensions
+            next_input = next_input.view(1, 1, 1)
+
+            # Use the last output as the next input
+            # Note: Ensure output is unsqueezed and matches the input dimensions
+            current_input = torch.cat((current_input[:, :, 1:], next_input), dim=2)
+
+            # Store the generated sample
+            generated_audio.append(next_input.item())
 
     # Convert the list of samples to a single numpy array and reshape it
-    generated_audio = np.concatenate(generated_audio).reshape(-1)
+    generated_audio = np.array(generated_audio).reshape(-1)
 
     return generated_audio
 
@@ -97,8 +85,8 @@ model.load_state_dict(state_dict)
 
 generated_audio = generate_audio(model, sample_rate=16000, duration=1, device='cpu')
 
-# sample_rate = 16000  # Replace with your actual sample rate
-# file_path = "generated/generated_audio.wav"  # Replace with your desired file path
-# audio_data = generated_audio.tolist()  # Replace 'generated_audio.tolist()' with your list of floats
+sample_rate = 16000  # Replace with your actual sample rate
+file_path = "generated/generated_audio.wav"  # Replace with your desired file path
+audio_data = generated_audio.tolist()  # Replace 'generated_audio.tolist()' with your list of floats
 
-# floats_to_wav(audio_data, sample_rate, file_path)
+floats_to_wav(audio_data, sample_rate, file_path)
