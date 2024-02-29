@@ -82,7 +82,7 @@ discriminator.to(device)
 lr = 0.0002
 batch_size = 16
 epochs = 200
-sample_interval = 500
+sample_interval = 50
 input_dim = 100  # Dimension of the noise vector
 
 criterion = nn.BCELoss()
@@ -137,7 +137,7 @@ for epoch in range(epochs):
         optimizer_G.step()
         
     # Print some progress every now and then
-    if epoch % 50 == 0:
+    if epoch % sample_interval == 0:
         print(f"Epoch {epoch}/{epochs} | D loss: {d_loss.item()} | G loss: {g_loss.item()}")
 
 # Save the model
