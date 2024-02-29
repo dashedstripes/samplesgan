@@ -99,9 +99,9 @@ for epoch in range(epochs):
         real_samples = real_samples.to(device)
 
         # Prepare real samples and fake samples
-        real_labels = torch.ones((batch_size, 1))
-        fake_labels = torch.zeros((batch_size, 1))
-        z = torch.randn((batch_size, input_dim))
+        real_labels = torch.ones((batch_size, 1), device=device)
+        fake_labels = torch.zeros((batch_size, 1), device=device)
+        z = torch.randn((batch_size, input_dim), device=device)
         # ---------------------
         #  Train Discriminator
         # ---------------------
