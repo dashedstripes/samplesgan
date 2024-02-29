@@ -64,10 +64,11 @@ model_weights_path = "generator.pth"
 state_dict = torch.load(model_weights_path, map_location=device)
 model.load_state_dict(state_dict)
 
-generated_audio = generate_audio(model, device=device)
+# generate 10 samples
+for i in range(10):
+    generated_audio = generate_audio(model, device=device)
+    sample_rate = 16000  # Replace with your actual sample rate
+    file_path = f"generated/generated_audio_{i}.wav"  # Replace with your desired file path
+    audio_data = generated_audio.tolist()  # Replace 'generated_audio.tolist()' with your list of floats
 
-sample_rate = 16000  # Replace with your actual sample rate
-file_path = "generated/generated_audio.wav"  # Replace with your desired file path
-audio_data = generated_audio.tolist()  # Replace 'generated_audio.tolist()' with your list of floats
-
-floats_to_wav(audio_data, sample_rate, file_path)
+    floats_to_wav(audio_data, sample_rate, file_path)
