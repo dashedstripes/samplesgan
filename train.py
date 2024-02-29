@@ -5,119 +5,121 @@ from scipy.io import wavfile
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import torchaudio
 
-
-class SlidingWindowDataset(Dataset):
+class AudioDataset(Dataset):
     def __init__(self, directory):
-        self.directory = directory
-
-    def __len__(self):
-        for _, _, files in os.walk(self.directory):
-          return len(files)
-
-    def __getitem__(self, idx):
-        _, data = wavfile.read(f"{self.directory}/chunk_{idx}.wav")
-
-        sequence = data[0:99]
-        target = data[99]
-
-        sequence = torch.tensor(sequence, dtype=torch.float32).unsqueeze(0)
-        target = torch.tensor(target, dtype=torch.float32)
-
-        return sequence, target
-
-class AttentionModel(nn.Module):
-    def __init__(self, sequence_length, attention_size):
-        super(AttentionModel, self).__init__()
-        
-        self.conv1 = nn.Conv1d(1, 64, kernel_size=3, stride=1, padding=1)
-        self.lstm = nn.LSTM(64, 50, batch_first=True)
-        self.attention_weights = nn.Parameter(torch.randn(attention_size, sequence_length))
-        self.dense1 = nn.Linear(50 + attention_size, 50)
-        self.dense2 = nn.Linear(50, 1)
+        self.audio_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.wav')]
     
-    def forward(self, x):
-        # Convolutional part
-        # x = x.permute(0, 2, 1)
-        x = F.relu(self.conv1(x))
+    def __len__(self):
+        return len(self.audio_files)
+    
+    def __getitem__(self, idx):
+        rate, data = wavfile.read(self.audio_files[idx])
+        data = torch.tensor(data, dtype=torch.float32)
+        return data
 
-        x = x.permute(0, 2, 1)
-        
-        # # LSTM part
-        lstm_out, (hn, cn) = self.lstm(x)
+class Generator(nn.Module):
+    def __init__(self, input_dim=100, output_dim=16000):
+        super(Generator, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 512),
+            nn.LeakyReLU(0.2),
+            nn.Linear(512, 1024),
+            nn.LeakyReLU(0.2),
+            nn.Linear(1024, output_dim),
+            nn.Tanh()  # Normalizing output to [-1, 1]
+        )
+    
+    def forward(self, z):
+        return self.model(z)
 
+class Discriminator(nn.Module):
+    def __init__(self, input_dim=16000):
+        super(Discriminator, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 1024),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(1024, 512),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
         
-        lstm_out = lstm_out.transpose(1, 2)
-        print(self.attention_weights.shape)
-        print(lstm_out.shape)
-        
-        # # Attention mechanism
-        attention_scores = F.softmax(torch.matmul(self.attention_weights, lstm_out.transpose(1, 2)), dim=2)
-        
-        weighted_features = torch.matmul(attention_scores, lstm_out)
-        
-        # # Combining LSTM output with attention weighted features
-        combined_features = torch.cat((lstm_out[:, -1, :], weighted_features.squeeze(1)), dim=1)
-        
-        # # Passing through dense layers
-        x = F.relu(self.dense1(combined_features))
-        # x = self.dense2(x)
-        
+    def forward(self, audio_sample):
+        x = self.model(audio_sample)
         return x
 
-class WaveNetModel(nn.Module):
-    def __init__(self):
-        super(WaveNetModel, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.lstm = nn.LSTM(input_size=64, hidden_size=50, batch_first=True)
-        self.dense1 = nn.Linear(50, 50)
-        self.dense2 = nn.Linear(50, 1)
+generator = Generator()
+discriminator = Discriminator()
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
+# hyperparameters
+lr = 0.0002
+batch_size = 16
+epochs = 200
+sample_interval = 500
+input_dim = 100  # Dimension of the noise vector
 
-        x = x.permute(0, 2, 1)
-        x, (hn, cn) = self.lstm(x)
-        x = x[:, -1, :]
+criterion = nn.BCELoss()
 
-        x = self.relu(self.dense1(x))
-        x = self.dense2(x)
+optimizer_G = torch.optim.Adam(generator.parameters(), lr=lr)
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=lr)
 
-        return x
+dataset = AudioDataset('./training_data/processed')
+train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=True)
 
+for epoch in range(epochs):
+    for i, real_samples in enumerate(train_loader):
 
-directory = "training_data/processed"
-dataset = SlidingWindowDataset(directory)
-dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+        # Prepare real samples and fake samples
+        real_labels = torch.ones((batch_size, 1))
+        fake_labels = torch.zeros((batch_size, 1))
+        z = torch.randn((batch_size, input_dim))
 
-sequence_length = 100
-attention_size = 4
-model = AttentionModel(sequence_length, attention_size)
-criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+        # ---------------------
+        #  Train Discriminator
+        # ---------------------
+        optimizer_D.zero_grad()
+        
+        # Loss on real samples
+        real_predictions = discriminator(real_samples)
+        d_loss_real = criterion(real_predictions, real_labels)
+        
+        # # Loss on fake samples
+        fake_samples = generator(z).detach()
+        fake_predictions = discriminator(fake_samples)
+        d_loss_fake = criterion(fake_predictions, fake_labels)
+        
+        # # Total discriminator loss
+        d_loss = (d_loss_real + d_loss_fake) / 2
+        d_loss.backward()
+        optimizer_D.step()
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
+        # -----------------
+        #  Train Generator
+        # -----------------
+        optimizer_G.zero_grad()
+        
+        # Generate a batch of samples
+        fake_samples = generator(z)
+        # Discriminator's prediction on fake samples
+        validity = discriminator(fake_samples)
+        # Loss measures generator's ability to fool the discriminator
+        g_loss = criterion(validity, real_labels)
+        
+        g_loss.backward()
+        optimizer_G.step()
+        
+    # Print some progress every now and then
+    if epoch % sample_interval == 0:
+        print(f"Epoch {epoch}/{epochs} | D loss: {d_loss.item()} | G loss: {g_loss.item()}")
 
-
-num_epochs = 100
-for epoch in range(num_epochs):
-    for i, (sequences, targets) in enumerate(dataloader):
-        sequences, targets = sequences.to(device), targets.to(device)
-        optimizer.zero_grad()
-        outputs = model(sequences)
-
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-
-        if (i + 1) % 100 == 0:
-            print(
-                f"Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{len(dataloader)}], Loss: {loss.item()}"
-            )
-
-print("Finished Training")
-# save the weights
-torch.save(model.state_dict(), "wavenet_model.pth")
+# Save the model
+torch.save(generator.state_dict(), 'generator.pth')
