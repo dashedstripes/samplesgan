@@ -16,46 +16,61 @@ class AudioDataset(Dataset):
     
     def __getitem__(self, idx):
         rate, data = wavfile.read(self.audio_files[idx])
-        data = torch.tensor(data, dtype=torch.float32)
+        data = torch.tensor(data, dtype=torch.float32).unsqueeze(0)
         return data
 
 class Generator(nn.Module):
-    def __init__(self, input_dim=100, output_dim=16000):
+    def __init__(self, input_dim=100, output_channels=1, output_length=16000):
         super(Generator, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.LeakyReLU(0.2),
-            nn.Linear(256, 512),
-            nn.LeakyReLU(0.2),
-            nn.Linear(512, 1024),
-            nn.LeakyReLU(0.2),
-            nn.Linear(1024, output_dim),
-            nn.Tanh()  # Normalizing output to [-1, 1]
+        self.init_size = output_length // 4  # Initial size before upsampling
+        self.l1 = nn.Sequential(nn.Linear(input_dim, 128 * self.init_size))
+
+        self.conv_blocks = nn.Sequential(
+            nn.BatchNorm1d(128),
+            nn.Upsample(scale_factor=2),
+            nn.Conv1d(128, 128, 3, stride=1, padding=1),
+            nn.BatchNorm1d(128, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Upsample(scale_factor=2),
+            nn.Conv1d(128, 64, 3, stride=1, padding=1),
+            nn.BatchNorm1d(64, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(64, output_channels, 3, stride=1, padding=1),
+            nn.Tanh()
         )
-    
+
     def forward(self, z):
-        return self.model(z)
+        out = self.l1(z)
+        out = out.view(out.shape[0], 128, self.init_size)
+        audio = self.conv_blocks(out)
+        return audio
+
 
 class Discriminator(nn.Module):
-    def __init__(self, input_dim=16000):
+    def __init__(self, input_length=16000):
         super(Discriminator, self).__init__()
+
         self.model = nn.Sequential(
-            nn.Linear(input_dim, 1024),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(1024, 512),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(256, 1),
+            nn.Conv1d(1, 64, 3, stride=2, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.25),
+            nn.Conv1d(64, 64, 3, stride=2, padding=1),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.25),
+            nn.Conv1d(64, 256, 3, stride=2, padding=1),
+            nn.BatchNorm1d(256, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.25),
+            nn.Flatten(),
+            nn.Linear(256 * (input_length // 8), 1),
             nn.Sigmoid()
         )
-        
+
     def forward(self, audio_sample):
-        x = self.model(audio_sample)
-        return x
+        validity = self.model(audio_sample)
+        return validity
+
 
 generator = Generator()
 discriminator = Discriminator()
@@ -82,7 +97,6 @@ for epoch in range(epochs):
         real_labels = torch.ones((batch_size, 1))
         fake_labels = torch.zeros((batch_size, 1))
         z = torch.randn((batch_size, input_dim))
-
         # ---------------------
         #  Train Discriminator
         # ---------------------
@@ -92,7 +106,7 @@ for epoch in range(epochs):
         real_predictions = discriminator(real_samples)
         d_loss_real = criterion(real_predictions, real_labels)
         
-        # # Loss on fake samples
+    #     # # Loss on fake samples
         fake_samples = generator(z).detach()
         fake_predictions = discriminator(fake_samples)
         d_loss_fake = criterion(fake_predictions, fake_labels)
