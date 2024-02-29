@@ -81,7 +81,7 @@ discriminator.to(device)
 # hyperparameters
 lr = 0.0002
 batch_size = 32
-epochs = 2000
+epochs = 200
 sample_interval = 50
 input_dim = 100  # Dimension of the noise vector
 
