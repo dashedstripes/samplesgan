@@ -1,4 +1,4 @@
-# wavenet#samples
+# gan#samples
 
 a nn to generate new audio samples from scratch (currently 16khz)
 
