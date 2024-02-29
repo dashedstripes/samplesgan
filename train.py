@@ -137,7 +137,7 @@ for epoch in range(epochs):
         optimizer_G.step()
         
     # Print some progress every now and then
-    if epoch % sample_interval == 0:
+    if epoch % 50 == 0:
         print(f"Epoch {epoch}/{epochs} | D loss: {d_loss.item()} | G loss: {g_loss.item()}")
 
 # Save the model
