@@ -4,71 +4,48 @@ import torch.nn as nn
 from scipy.io.wavfile import write
 
 
-class WaveNetModel(nn.Module):
-    def __init__(self):
-        super(WaveNetModel, self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.lstm = nn.LSTM(input_size=64, hidden_size=50, batch_first=True)
-        self.dense1 = nn.Linear(50, 50)
-        self.dense2 = nn.Linear(50, 1)
+class Generator(nn.Module):
+    def __init__(self, input_dim=100, output_channels=1, output_length=16000):
+        super(Generator, self).__init__()
+        self.init_size = output_length // 4  # Initial size before upsampling
+        self.l1 = nn.Sequential(nn.Linear(input_dim, 128 * self.init_size))
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
+        self.conv_blocks = nn.Sequential(
+            nn.BatchNorm1d(128),
+            nn.Upsample(scale_factor=2),
+            nn.Conv1d(128, 128, 3, stride=1, padding=1),
+            nn.BatchNorm1d(128, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Upsample(scale_factor=2),
+            nn.Conv1d(128, 64, 3, stride=1, padding=1),
+            nn.BatchNorm1d(64, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv1d(64, output_channels, 3, stride=1, padding=1),
+            nn.Tanh()
+        )
 
-        x = x.permute(0, 2, 1)
-        x, (hn, cn) = self.lstm(x)
-        x = x[:, -1, :]
+    def forward(self, z):
+        out = self.l1(z)
+        out = out.view(out.shape[0], 128, self.init_size)
+        audio = self.conv_blocks(out)
+        return audio
 
-        x = self.relu(self.dense1(x))
-        x = self.dense2(x)
-
-        return x
-
-def generate_audio(model, sample_rate=16000, duration=1, device='cuda'):
-    """
-    Generate audio using a trained WaveNet model.
-
-    Args:
-    - model: The trained WaveNet model.
-    - sample_rate: The sample rate of the audio to generate.
-    - duration: The duration of the audio to generate in seconds.
-    - device: The device to run the generation on ('cuda' or 'cpu').
-
-    Returns:
-    - generated_audio: A numpy array containing the generated audio samples.
-    """
-    model.eval()  # Set the model to evaluation mode
+def generate_audio(model, device='cpu'):
     model.to(device)
-
-    # Calculate the number of samples to generate
-    num_samples = sample_rate * duration
-
-    # Initialize the seed with zeros (or you could use random noise)
-    current_input = torch.rand(1, 1, 99).to(device)
-
-    generated_audio = []
-
-    with torch.no_grad():  # No need to track gradients
-        for _ in range(num_samples):
-            # Forward pass through the model
-            output = model(current_input)
-            next_input = output.squeeze()
-            # reshape next_input to match the input dimensions
-            next_input = next_input.view(1, 1, 1)
-
-            # Use the last output as the next input
-            # Note: Ensure output is unsqueezed and matches the input dimensions
-            current_input = torch.cat((current_input[:, :, 1:], next_input), dim=2)
-
-            # Store the generated sample
-            generated_audio.append(next_input.item())
-
-    # Convert the list of samples to a single numpy array and reshape it
-    generated_audio = np.array(generated_audio).reshape(-1)
-
-    return generated_audio
+    model.eval()
+    
+    # Generate noise vector z
+    input_dim = 100  # Adjust this based on your model's input dimension
+    z = torch.randn(1, input_dim, device=device)
+    
+    # Generate audio samples
+    with torch.no_grad():
+        generated_samples = model(z)
+        
+    # Move generated samples to CPU and convert to 1D numpy array
+    generated_samples = generated_samples.squeeze().to('cpu').numpy()
+    
+    return generated_samples
 
 def floats_to_wav(audio_data, sample_rate, file_path):
     # Scale the floats to the range of 16-bit integers
@@ -78,12 +55,16 @@ def floats_to_wav(audio_data, sample_rate, file_path):
     # Write the data to a WAV file
     write(file_path, sample_rate, int_data)
 
-model = WaveNetModel()
-model_weights_path = "wavenet_model.pth"
-state_dict = torch.load(model_weights_path, map_location=torch.device('cpu'))
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = Generator()
+model.to(device)
+
+model_weights_path = "generator.pth"
+state_dict = torch.load(model_weights_path, map_location=device)
 model.load_state_dict(state_dict)
 
-generated_audio = generate_audio(model, sample_rate=16000, duration=1, device='cpu')
+generated_audio = generate_audio(model, device=device)
 
 sample_rate = 16000  # Replace with your actual sample rate
 file_path = "generated/generated_audio.wav"  # Replace with your desired file path
