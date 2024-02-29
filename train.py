@@ -96,6 +96,7 @@ train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_la
 
 for epoch in range(epochs):
     for i, real_samples in enumerate(train_loader):
+        real_samples = real_samples.to(device)
 
         # Prepare real samples and fake samples
         real_labels = torch.ones((batch_size, 1))
