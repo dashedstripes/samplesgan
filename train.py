@@ -15,7 +15,7 @@ class AudioDataset(Dataset):
         return len(self.audio_files)
     
     def __getitem__(self, idx):
-        rate, data = wavfile.read(self.audio_files[idx])
+        _, data = wavfile.read(self.audio_files[idx])
         data = torch.tensor(data, dtype=torch.float32).unsqueeze(0)
         return data
 
@@ -111,12 +111,12 @@ for epoch in range(epochs):
         real_predictions = discriminator(real_samples)
         d_loss_real = criterion(real_predictions, real_labels)
         
-    #     # # Loss on fake samples
+        # Loss on fake samples
         fake_samples = generator(z).detach()
         fake_predictions = discriminator(fake_samples)
         d_loss_fake = criterion(fake_predictions, fake_labels)
         
-        # # Total discriminator loss
+        # Total discriminator loss
         d_loss = (d_loss_real + d_loss_fake) / 2
         d_loss.backward()
         optimizer_D.step()
