@@ -51,25 +51,18 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
 
         self.model = nn.Sequential(
-            nn.Conv1d(1, 64, 3, stride=2, padding=1),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.25),
-            nn.Conv1d(64, 64, 3, stride=2, padding=1),
-            nn.BatchNorm1d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.25),
-            nn.Conv1d(64, 256, 3, stride=2, padding=1),
-            nn.BatchNorm1d(256, 0.8),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.25),
+            nn.Conv1d(1, 64, 3, stride=1, padding=1),
+            nn.Conv1d(64, 32, 3, stride=2, padding=1),
+            nn.Conv1d(32, 16, 3, stride=4, padding=1),
+            nn.Conv1d(16, 8, 3, stride=8, padding=1),
             nn.Flatten(),
-            nn.Linear(256 * (input_length // 8), 1),
+            nn.Linear(2000, 1),
             nn.Sigmoid()
         )
 
     def forward(self, audio_sample):
-        validity = self.model(audio_sample)
-        return validity
+        x = self.model(audio_sample)
+        return x
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,16 +95,16 @@ for epoch in range(epochs):
         real_labels = torch.ones((batch_size, 1), device=device)
         fake_labels = torch.zeros((batch_size, 1), device=device)
         z = torch.randn((batch_size, input_dim), device=device)
-        # ---------------------
-        #  Train Discriminator
-        # ---------------------
+        # # ---------------------
+        # #  Train Discriminator
+        # # ---------------------
         optimizer_D.zero_grad()
         
-        # Loss on real samples
+        # # Loss on real samples
         real_predictions = discriminator(real_samples)
         d_loss_real = criterion(real_predictions, real_labels)
         
-        # Loss on fake samples
+        # # Loss on fake samples
         fake_samples = generator(z).detach()
         fake_predictions = discriminator(fake_samples)
         d_loss_fake = criterion(fake_predictions, fake_labels)
@@ -121,9 +114,9 @@ for epoch in range(epochs):
         d_loss.backward()
         optimizer_D.step()
 
-        # -----------------
-        #  Train Generator
-        # -----------------
+        # # -----------------
+        # #  Train Generator
+        # # -----------------
         optimizer_G.zero_grad()
         
         # Generate a batch of samples
